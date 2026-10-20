@@ -21,7 +21,7 @@ The reference method is the GIN + MaxPool + positional-edge tracking model from 
 
 ## Evaluation
 
-Submit predictions through the [CodaBench evaluation server](https://www.codabench.org/competitions/18326/). The [evaluation guide](evaluation/README.md) documents the prediction format and scorer. The scorer calls OpenSportsLib's classification metrics and reports balanced accuracy, macro F1, and accuracy; **balanced accuracy** is the ranking metric.
+Submit predictions through the [CodaBench evaluation server](https://www.codabench.org/competitions/18326/). The [evaluation guide](evaluation/README.md) documents the prediction format and scorer. The scorer calls OpenSportsLib's classification metrics and reports balanced accuracy, macro F1, accuracy, and ten per-class recalls as percentages; **balanced accuracy** remains the ranking metric.
 
 ## Citation
 

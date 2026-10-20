@@ -7,6 +7,20 @@ from pathlib import Path
 import sys
 
 
+RECALL_CLASSES = {
+    "recall_pass": "PASS",
+    "recall_tackle": "PLAYER SUCCESSFUL TACKLE",
+    "recall_out": "OUT",
+    "recall_header": "HEADER",
+    "recall_throw_in": "THROW IN",
+    "recall_cross": "CROSS",
+    "recall_free_kick": "FREE KICK",
+    "recall_shot": "SHOT",
+    "recall_goal": "GOAL",
+    "recall_high_pass": "HIGH PASS",
+}
+
+
 def unique_object(pairs):
     result = {}
     for key, value in pairs:
@@ -76,17 +90,27 @@ def score(ground_truth, predictions):
         raise ValueError("Prediction contains an unknown action class")
 
     from opensportslib.metrics.classification_metric import compute_classification_metrics
+    from sklearn.metrics import recall_score
 
     class_to_index = {name: index for index, name in enumerate(classes)}
     ids = list(truth)
     labels = [class_to_index[truth[sample_id]] for sample_id in ids]
     predicted = [class_to_index[pred[sample_id]] for sample_id in ids]
     metrics = compute_classification_metrics((predicted, labels), mode="labels")
-    return {
+    scores = {
         "balanced_accuracy": 100.0 * float(metrics["balanced_accuracy"]),
         "macro_f1": 100.0 * float(metrics["f1"]),
         "accuracy": 100.0 * float(metrics["accuracy"]),
     }
+    # Use explicit class indices: the manifest order differs from the leaderboard.
+    recalls = recall_score(
+        labels, predicted,
+        labels=[class_to_index[name] for name in RECALL_CLASSES.values()],
+        average=None, zero_division=0,
+    )
+    scores.update({key: 100.0 * float(value)
+                   for key, value in zip(RECALL_CLASSES, recalls)})
+    return scores
 
 
 def main():
