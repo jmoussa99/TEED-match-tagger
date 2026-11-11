@@ -1,0 +1,11 @@
+# Runtime dependencies for the match tagger (app/) and the T-DEED model code.
+# T-DEED's own requirements.txt pins Linux CUDA wheels, so it is not used.
+# Versions are the ones tested on macOS (Apple Silicon) with Python 3.12.
+torch==2.15.0
+torchvision==0.29.2
+timm==1.0.30
+tqdm==4.70.1
+numpy==2.2.6
+pandas==3.1.0
+gradio==6.31.0
+gdown==6.5.1

@@ -4,20 +4,18 @@ __pycache__/
 .env
 .env.*
 .DS_Store
+
+# T-DEED clone and checkpoint (fetched by scripts/setup_tdeed.sh)
 private/
+
+# Tagged events and per-frame score cache
 outputs/
-data/tracking/
-data/tracking-full/
-data/frames/
-data/videos/
+
+# Match videos and model weights
+*.mp4
+*.mkv
+*.mov
 *.zip
 *.pt
 *.pth
 *.ckpt
-!baselines/best_epoch_78.pt
-!baselines/gar-submission.zip
-
-# Keep hidden challenge references out of Git.
-**/challenge_GT.json
-**/challenge_ground_truth*
-**/challenge_labels*

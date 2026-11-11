@@ -1,79 +1,93 @@
-# SoccerNet Challenge 2027 — Group Activity Recognition (GAR)
+# Soccer match event tagger
 
-📢 **Group Activity Recognition (GAR) Challenge!** 🚀
+Tags ball actions across a full soccer match with [T-DEED](https://github.com/arturxe2/T-DEED), a ball action spotting model. The app uses the published `SoccerNetBall_challenge2` checkpoint, so it needs no training. It runs locally on Apple Silicon (MPS) or CPU, from a browser UI or the command line.
 
-📅 **Submission deadline:** April 25, 2027, 23:59 Anywhere on Earth (AoE; UTC−12).\
-👥 **Task lead:** Silvio Giancola
+The model predicts 12 classes: `PASS`, `DRIVE`, `HEADER`, `HIGH PASS`, `OUT`, `CROSS`, `THROW IN`, `SHOT`, `BALL PLAYER BLOCK`, `PLAYER SUCCESSFUL TACKLE`, `FREE KICK`, `GOAL`. The UI's **GAR 10 classes** filter hides `DRIVE` and `BALL PLAYER BLOCK`. The remaining classes are the label set of the [SoccerNet 2027 Group Activity Recognition challenge](https://github.com/SoccerNet/sn-gar-2027), where this project started.
 
-🏠 [Challenge website](https://www.soccer-net.org/challenges/2027) · 🗂️ [Data on Hugging Face](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR) · 💻 [Baseline](baselines/README.md) · 📚 [Rules](RULES.md) · 📊 [Evaluation server](https://www.codabench.org/competitions/18326/) · 🧮 [Evaluation code](evaluation/README.md)
+## Requirements
 
-## Task
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- `ffmpeg` (`brew install ffmpeg`)
+- About 1 GB of disk space for the T-DEED clone, Python packages, and the 185 MB checkpoint
 
-Predict one of ten group activity classes for each soccer clip using video pixels, player positions, or both. All modalities share one leaderboard ranked by **balanced accuracy**. The supplied baseline uses 16 sampled frames of player and ball positions from the `tracking` branch; participants are welcome to explore the `videos` and `tracking-full` branches or combine available representations. The task and reference method are described in [*Pixels or Positions? Benchmarking Modalities in Group Activity Recognition*](https://openaccess.thecvf.com/content/CVPR2026W/CVsports/html/Karki_Pixels_or_Positions_Benchmarking_Modalities_in_Group_Activity_Recognition_CVPRW_2026_paper.html).
+## Setup
 
-## Data
-
-The gated [SoccerNet-GAR dataset](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR) provides train, valid, and test material. Request access on Hugging Face and choose among the [`tracking`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/tracking), [`frames`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/frames), [`videos`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/videos), and [`tracking-full`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/tracking-full) branches. The [OpenSportsLib JSON manifests](data/README.md) for [train](data/annotations_train.json), [validation](data/annotations_valid.json), and [test](data/annotations_test.json) include ground-truth labels and references to all four modality inputs; the media files are not copied into this repository. Approved users can already access the labels on Hugging Face, so the same test labels are published here to support reproducible evaluation. Follow the [no-test-training rule](RULES.md).
-
-### Local tracking baseline setup
-
-Use Python 3.12 and run commands from this repository's root. The baseline needs the `tracking` branch's extracted Parquet clips at `data/tracking/{train,valid,test}/clip_*.parquet`, for example `data/tracking/train/clip_000000.parquet`. The supplied manifests already contain the labels. Place other modalities under `data/frames/`, `data/videos/`, or `data/tracking-full/` with the same split layout. These media directories are Git-ignored.
+From the repository root:
 
 ```bash
-uv venv --python 3.12 .venv
-git clone https://github.com/OpenSportsLab/opensportslib.git private/opensportslib
-git -C private/opensportslib checkout b2fe8f16a35336d93b1b0eabe1741bbbbc36cd68
-uv pip install --python .venv/bin/python -r evaluation/requirements-scoring.txt -e private/opensportslib torch-geometric
-.venv/bin/python scripts/check_data.py --branch tracking
+bash scripts/setup_tdeed.sh
 ```
 
-If the tracking clips are still on Hugging Face, log in on this machine, then download and extract all three splits directly into the expected `data/` layout:
+The script does the following:
+
+1. Creates `.venv` with Python 3.12, if it does not exist.
+2. Clones T-DEED into `private/T-DEED` at a pinned commit.
+3. Applies [`app/patches/tdeed_mps.patch`](app/patches/tdeed_mps.patch). The patch replaces T-DEED's hardcoded CUDA calls so the model runs on MPS or CPU.
+4. Installs [`requirements.txt`](requirements.txt). T-DEED's own `requirements.txt` is not used, because it pins Linux CUDA wheels.
+5. Downloads the checkpoint.
+
+You can run the script again safely. It skips steps that are already done.
+
+## Run
+
+### UI
 
 ```bash
-.venv/bin/hf auth login
-.venv/bin/python scripts/download_tracking.py
-.venv/bin/python scripts/check_data.py --branch tracking
+.venv/bin/python app/ui.py   # open http://127.0.0.1:7860
 ```
 
-The local [tracking config](configs/sngar_tracking_local.yaml) uses the supplied manifests and `data/` paths. It runs on CPU by default, which works on macOS; change `SYSTEM.device` and GPU settings for a CUDA machine. Once the data check passes, run the included checkpoint from the repository root:
+Paste a local path to the match file, or upload it. A path is faster for multi-GB files. Click **Tag match**.
+
+When tagging finishes, you can:
+
+- Filter events by confidence or class without re-running the model.
+- Click an event row to play an 8-second preview around it.
+- Download the events as JSON or CSV.
+
+### Command line
 
 ```bash
-.venv/bin/python - <<'PY'
-from opensportslib.apis import ClassificationModel
-
-model = ClassificationModel(config="configs/sngar_tracking_local.yaml")
-predictions = model.infer(weights="baselines/best_epoch_78.pt", use_wandb=False)
-model.save_predictions(output_path="outputs/predictions.json", predictions=predictions)
-PY
-.venv/bin/python evaluation/scoring.py --ground-truth data/annotations_test.json --predictions outputs/predictions.json
+.venv/bin/python app/tdeed_runner.py /path/to/match.mp4                    # whole match
+.venv/bin/python app/tdeed_runner.py match.mp4 --start 600 --duration 300  # a 5-minute excerpt
+.venv/bin/python app/tdeed_runner.py match.mp4 --threshold 0.5             # keep confident events only
 ```
 
-The baseline [guide](baselines/README.md) describes training and the OpenSportsLib API. Keep test examples out of training, tuning, and model selection as required by [the rules](RULES.md).
+Results are written to `outputs/events/<video>_events.{json,csv}`. Per-frame scores are cached in `outputs/tdeed_cache/`, so a second run on the same file is instant.
 
-## Baseline
+## How it works
 
-The reference method is the GIN + MaxPool + positional-edge tracking model from [Karki et al.](https://github.com/drishyakarki/pixels_vs_positions). The [baseline guide](baselines/README.md) provides its trained checkpoint, test predictions, submission ZIP, and instructions to reproduce inference with OpenSportsLib. The supplied predictions score **78.64% balanced accuracy** on the challenge test set.
+1. ffmpeg decodes the video with VideoToolbox. It resamples the video to 12.5 fps and resizes it to 796×448. This matches T-DEED's training frames, which were extracted at 25 fps and sampled every second frame.
+2. The model scores frames in 100-frame clips (8 s), with 3/4 overlap between clips. Scores from overlapping clips are averaged.
+3. Each class goes through soft non-maximum suppression with a 12-frame window (about 1 s). Each event that remains gets a timestamp from the start of the video and a confidence score.
 
-## Evaluation
+The windows, padding, displacement-head aggregation, and soft-NMS reproduce T-DEED's `inference.py` and `util/eval.py`.
 
-Submit predictions through the [CodaBench evaluation server](https://www.codabench.org/competitions/18326/). The [evaluation guide](evaluation/README.md) documents the prediction format and scorer. The scorer calls OpenSportsLib's classification metrics and reports balanced accuracy, macro F1, accuracy, and ten per-class recalls as percentages; **balanced accuracy** remains the ranking metric.
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| [`app/ui.py`](app/ui.py) | Gradio UI |
+| [`app/tdeed_runner.py`](app/tdeed_runner.py) | Model loading, inference pipeline, and command-line interface |
+| [`app/patches/tdeed_mps.patch`](app/patches/tdeed_mps.patch) | Makes T-DEED device-agnostic (MPS or CPU) |
+| [`scripts/setup_tdeed.sh`](scripts/setup_tdeed.sh) | One-step setup |
+| `private/`, `outputs/` | T-DEED clone and results (Git-ignored) |
+
+## Notes
+
+- **Accuracy:** T-DEED was trained on SoccerNet broadcast footage (25 fps, 720p). Other camera styles or amateur footage may score lower.
+- **Timestamps:** Times run from the start of the file. If one file holds both halves, the second half's times include the half-time break.
+- **License:** T-DEED is GPL-3.0. It is kept as an external clone under `private/` and is not vendored into this repository.
 
 ## Citation
 
-Please cite the GAR benchmark paper in its CVPR Workshops version:
+The model is T-DEED by Xarles et al.:
 
-```bibtext
-@InProceedings{Karki_2026_CVPR,
-  author = {Karki, Drishya and Ramazanova, Merey and Cioppa, Anthony and Giancola, Silvio and Ghanem, Bernard},
-  title = {Pixels or Positions? Benchmarking Modalities in Group Activity Recognition},
-  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops},
-  month = {June},
-  year = {2026},
-  pages = {9998--10008},
-  url = {https://openaccess.thecvf.com/content/CVPR2026W/CVsports/html/Karki_Pixels_or_Positions_Benchmarking_Modalities_in_Group_Activity_Recognition_CVPRW_2026_paper.html}
+```bibtex
+@inproceedings{xarles2024t,
+  title={T-DEED: Temporal-Discriminability Enhancer Encoder-Decoder for Precise Event Spotting in Sports Videos},
+  author={Xarles, Artur and Escalera, Sergio and Moeslund, Thomas B and Clap{\'e}s, Albert},
+  booktitle={Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
+  pages={3410--3419},
+  year={2024}
 }
 ```
-
-## Community
-
-Follow the [SoccerNet challenge website](https://www.soccer-net.org/challenges/2027) and [Discord](https://discord.gg/cPbqf2mAwF) for challenge announcements and discussion.

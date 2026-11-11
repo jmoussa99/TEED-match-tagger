@@ -14,7 +14,8 @@ CHECKPOINT_ID="1uCWam8EhAXt3z6QQAfhRfzHITUcml438"
 PYTHON_BIN=".venv/bin/python"
 
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required: brew install ffmpeg" >&2; exit 1; }
-[[ -x "$PYTHON_BIN" ]] || { echo "Create the venv first (see README.md)" >&2; exit 1; }
+command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/" >&2; exit 1; }
+[[ -x "$PYTHON_BIN" ]] || uv venv --python 3.12 .venv
 
 if [[ ! -d "$TDEED_DIR/.git" ]]; then
   git clone https://github.com/arturxe2/T-DEED "$TDEED_DIR"
@@ -30,8 +31,8 @@ else
   echo "Patch already applied (or tree modified); skipping"
 fi
 
-# T-DEED's requirements.txt pins Linux CUDA wheels; the app only needs these.
-uv pip install --python "$PYTHON_BIN" gradio gdown
+# T-DEED's requirements.txt pins Linux CUDA wheels; use this repository's instead.
+uv pip install --python "$PYTHON_BIN" -r requirements.txt
 
 CKPT_DIR="$TDEED_DIR/checkpoints/SoccerNetBall/$MODEL_NAME"
 mkdir -p "$CKPT_DIR"
