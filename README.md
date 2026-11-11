@@ -15,6 +15,41 @@ Predict one of ten group activity classes for each soccer clip using video pixel
 
 The gated [SoccerNet-GAR dataset](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR) provides train, valid, and test material. Request access on Hugging Face and choose among the [`tracking`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/tracking), [`frames`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/frames), [`videos`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/videos), and [`tracking-full`](https://huggingface.co/datasets/OpenSportsLab/SoccerNet-GAR/tree/tracking-full) branches. The [OpenSportsLib JSON manifests](data/README.md) for [train](data/annotations_train.json), [validation](data/annotations_valid.json), and [test](data/annotations_test.json) include ground-truth labels and references to all four modality inputs; the media files are not copied into this repository. Approved users can already access the labels on Hugging Face, so the same test labels are published here to support reproducible evaluation. Follow the [no-test-training rule](RULES.md).
 
+### Local tracking baseline setup
+
+Use Python 3.12 and run commands from this repository's root. The baseline needs the `tracking` branch's extracted Parquet clips at `data/tracking/{train,valid,test}/clip_*.parquet`, for example `data/tracking/train/clip_000000.parquet`. The supplied manifests already contain the labels. Place other modalities under `data/frames/`, `data/videos/`, or `data/tracking-full/` with the same split layout. These media directories are Git-ignored.
+
+```bash
+uv venv --python 3.12 .venv
+git clone https://github.com/OpenSportsLab/opensportslib.git private/opensportslib
+git -C private/opensportslib checkout b2fe8f16a35336d93b1b0eabe1741bbbbc36cd68
+uv pip install --python .venv/bin/python -r evaluation/requirements-scoring.txt -e private/opensportslib torch-geometric
+.venv/bin/python scripts/check_data.py --branch tracking
+```
+
+If the tracking clips are still on Hugging Face, log in on this machine, then download and extract all three splits directly into the expected `data/` layout:
+
+```bash
+.venv/bin/hf auth login
+.venv/bin/python scripts/download_tracking.py
+.venv/bin/python scripts/check_data.py --branch tracking
+```
+
+The local [tracking config](configs/sngar_tracking_local.yaml) uses the supplied manifests and `data/` paths. It runs on CPU by default, which works on macOS; change `SYSTEM.device` and GPU settings for a CUDA machine. Once the data check passes, run the included checkpoint from the repository root:
+
+```bash
+.venv/bin/python - <<'PY'
+from opensportslib.apis import ClassificationModel
+
+model = ClassificationModel(config="configs/sngar_tracking_local.yaml")
+predictions = model.infer(weights="baselines/best_epoch_78.pt", use_wandb=False)
+model.save_predictions(output_path="outputs/predictions.json", predictions=predictions)
+PY
+.venv/bin/python evaluation/scoring.py --ground-truth data/annotations_test.json --predictions outputs/predictions.json
+```
+
+The baseline [guide](baselines/README.md) describes training and the OpenSportsLib API. Keep test examples out of training, tuning, and model selection as required by [the rules](RULES.md).
+
 ## Baseline
 
 The reference method is the GIN + MaxPool + positional-edge tracking model from [Karki et al.](https://github.com/drishyakarki/pixels_vs_positions). The [baseline guide](baselines/README.md) provides its trained checkpoint, test predictions, submission ZIP, and instructions to reproduce inference with OpenSportsLib. The supplied predictions score **78.64% balanced accuracy** on the challenge test set.

@@ -1,0 +1,65 @@
+diff --git a/model/impl/gsm.py b/model/impl/gsm.py
+index 2fad519..74c2517 100644
+--- a/model/impl/gsm.py
++++ b/model/impl/gsm.py
+@@ -64,7 +64,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ #Standard imports
+ import torch
+ from torch import nn
+-from torch.cuda import FloatTensor as ftens
+ 
+ class _GSM(nn.Module):
+     def __init__(self, fPlane, num_segments=3):
+@@ -81,10 +80,10 @@ class _GSM(nn.Module):
+         self.relu = nn.ReLU()
+ 
+     def lshift_zeroPad(self, x):
+-        return torch.cat((x[:,:,1:], ftens(x.size(0), x.size(1), 1, x.size(3), x.size(4)).fill_(0)), dim=2)
++        return torch.cat((x[:,:,1:], x.new_zeros(x.size(0), x.size(1), 1, x.size(3), x.size(4))), dim=2)
+ 
+     def rshift_zeroPad(self, x):
+-        return torch.cat((ftens(x.size(0), x.size(1), 1, x.size(3), x.size(4)).fill_(0), x[:,:,:-1]), dim=2)
++        return torch.cat((x.new_zeros(x.size(0), x.size(1), 1, x.size(3), x.size(4)), x[:,:,:-1]), dim=2)
+ 
+     def forward(self, x):
+         batchSize = x.size(0) // self.num_segments
+diff --git a/model/model.py b/model/model.py
+index 1f7d754..3309dbb 100644
+--- a/model/model.py
++++ b/model/model.py
+@@ -38,7 +38,7 @@ class TDEEDModel(BaseRGBModel):
+                 features = timm.create_model({
+                     'rny002': 'regnety_002',
+                     'rny008': 'regnety_008',
+-                }[self._feature_arch.rsplit('_', 1)[0]], pretrained=True)
++                }[self._feature_arch.rsplit('_', 1)[0]], pretrained=getattr(args, 'pretrained_backbone', True))
+                 feat_dim = features.head.fc.in_features
+ 
+                 # Remove final classification layer
+@@ -168,7 +168,7 @@ class TDEEDModel(BaseRGBModel):
+         
+         def update_pred_head(self, num_classes = [1, 1]):
+             self._pred_fine = FC2Layers(self._feat_dim, num_classes)
+-            self._pred_fine = self._pred_fine.cuda()
++            self._pred_fine = self._pred_fine.to(self.temp_enc.device)
+             self._double_head = True
+ 
+         def print_stats(self):
+@@ -262,7 +262,7 @@ class TDEEDModel(BaseRGBModel):
+                 label = label.flatten() if len(label.shape) == 2 \
+                     else label.view(-1, label.shape[-1])
+ 
+-                with torch.cuda.amp.autocast():
++                with torch.autocast(device_type=str(self.device).split(':')[0]):
+                     pred, y = self._model(frame, y = label, inference=inference)
+ 
+                     if 'labelD' in batch.keys():
+@@ -343,7 +343,7 @@ class TDEEDModel(BaseRGBModel):
+ 
+         self._model.eval()
+         with torch.no_grad():
+-            with torch.cuda.amp.autocast() if use_amp else nullcontext():
++            with torch.autocast(device_type=str(self.device).split(':')[0]) if use_amp else nullcontext():
+                 pred, y = self._model(seq, inference=True, augment_inference = augment_inference)
+             if isinstance(pred, dict):
+                 predD = pred['displ_feat']

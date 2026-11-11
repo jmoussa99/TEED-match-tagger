@@ -6,20 +6,8 @@ The complete OpenSportsLib JSON manifests are provided for [train](annotations_t
 
 Each sample has the standard OSL fields `id`, `inputs`, `labels`, and `metadata`. Each input uses its OSL type and a path relative to the repository's `data/` directory after downloading that branch into a same-named folder. The `branch` field distinguishes the two `tracking_parquet` inputs. The exact Hugging Face commit for each source branch is recorded in `metadata.hf_sources`.
 
-For example, download each split to a folder named for its branch:
+If you already have extracted clips, copy or link them into the paths named in the manifests. For the included tracking baseline, the first training clip is `data/tracking/train/clip_000000.parquet` from the repository root. Check placement with `python scripts/check_data.py --branch tracking` from the repository root; it reports counts for train, valid, and test and prints example missing paths.
 
-```python
-from opensportslib.tools import download_dataset_split_from_hf
-
-for branch in ("tracking", "frames", "videos", "tracking-full"):
-    download_dataset_split_from_hf(
-        repo_id="OpenSportsLab/SoccerNet-GAR",
-        revision=branch,
-        split="train",
-        output_dir="data",
-    )
-```
-
-OpenSportsLib places each downloaded split under `data/<branch>/train/`, matching manifest paths such as `tracking/train/clip_000000.parquet`. Replace `train` with `valid` or `test` to download the other splits. The same event IDs and action labels are aligned across all four branches.
+For the included tracking baseline, authenticate with Hugging Face and run `.venv/bin/python scripts/download_tracking.py` from the repository root. This pins the `tracking` revision recorded in the manifests, downloads all three splits, and extracts clips directly to paths such as `data/tracking/train/clip_000000.parquet`. The general OpenSportsLib downloader currently nests an extra split directory when extracting these shards; the repository script avoids that mismatch. For other modalities, place each file at the path named in its manifest input and use `scripts/check_data.py --branch <branch>` to verify placement. The same event IDs and action labels are aligned across all four branches.
 
 The test labels are included because they are available to approved dataset users on Hugging Face. The challenge ranks submissions on this existing test split. Do not train, tune, or select models using test examples or labels; see the [challenge rules](../RULES.md).

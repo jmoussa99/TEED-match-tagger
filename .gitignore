@@ -6,6 +6,10 @@ __pycache__/
 .DS_Store
 private/
 outputs/
+data/tracking/
+data/tracking-full/
+data/frames/
+data/videos/
 *.zip
 *.pt
 *.pth
