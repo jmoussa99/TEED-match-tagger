@@ -14,13 +14,14 @@ import gradio as gr
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import reliability as rel  # noqa: E402
 import tdeed_runner as tr  # noqa: E402
 
 PREVIEW_DIR = tr.CACHE_DIR / "previews"
 SERIES_COLOR = "#2a78d6"  # single series; class identity is carried by the axis, not color
 PREVIEW_HALF_WINDOW = 4.0  # seconds before/after the event
 
-TABLE_COLUMNS = ["time", "label", "confidence", "seconds"]
+TABLE_COLUMNS = ["time", "label", "confidence", "reliability", "seconds"]
 
 
 def _resolve_video(upload: str | None, local_path: str) -> Path:
@@ -41,6 +42,7 @@ def _views(scores, video: str, threshold: float, classes: list[str]):
         return empty, None, None, "No match tagged yet.", None, None
     events = tr.extract_events(scores, threshold, classes)
     df = pd.DataFrame(events, columns=["time", "seconds", "position_ms", "label", "confidence"])
+    df["reliability"] = df["label"].map(rel.level)
     json_path, csv_path = tr.save_events(events, video, threshold)
 
     counts = pd.DataFrame({
@@ -64,6 +66,11 @@ def _views(scores, video: str, threshold: float, classes: list[str]):
     minutes = len(scores) / tr.SAMPLED_FPS / 60
     summary = (f"**{len(df)} events** in {minutes:.1f} min of video "
                f"(confidence ≥ {threshold:.2f}, {len(classes)} classes shown).")
+    shaky = df[df["reliability"].isin([rel.LOW, rel.UNTESTED])]
+    if len(shaky):
+        names = ", ".join(sorted(shaky["label"].unique()))
+        summary += (f"\n\n⚠️ {len(shaky)} of these events are from classes with **low or untested reliability** "
+                    f"({names}). Check them in the preview before relying on them.")
     return df[TABLE_COLUMNS], bar, timeline, summary, str(json_path), str(csv_path)
 
 
@@ -129,6 +136,9 @@ def build() -> gr.Blocks:
                 with gr.Row():
                     all_btn = gr.Button("All 12 classes", size="sm")
                     gar_btn = gr.Button("GAR 10 classes", size="sm")
+                    reliable_btn = gr.Button("Reliable classes only", size="sm")
+                with gr.Accordion("How reliable is each class?", open=False):
+                    gr.Markdown(rel.legend_markdown(tr.CLASSES))
 
         summary = gr.Markdown("No match tagged yet.")
         with gr.Row():
@@ -151,6 +161,7 @@ def build() -> gr.Blocks:
             control.change(refilter, [scores_state, video_state, threshold, classes], view_outputs)
         all_btn.click(lambda: tr.CLASSES, None, classes)
         gar_btn.click(lambda: tr.GAR_CLASSES, None, classes)
+        reliable_btn.click(lambda: rel.classes_at_least(tr.CLASSES, rel.MEDIUM), None, classes)
         table.select(preview, [video_state], clip)
     return demo
 
