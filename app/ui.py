@@ -130,9 +130,10 @@ def select_event(evt: gr.SelectData):
     if evt.row_value is None:
         return None, "Click an event in the table.", None, None
     row = dict(zip(TABLE_COLUMNS, evt.row_value))
-    sel = {"label": row["label"], "seconds": float(row["seconds"]), "final": row["final label"] or row["label"]}
-    who = "added by you" if row["label"] == rv.NO_MODEL_LABEL else f"model: **{row['label']}**"
-    note = f"Selected **{row['time']}** ({who}{', ' + row['review'] if row['review'] else ''})"
+    sel = {"label": row["label"], "seconds": float(row["seconds"]), "time": row["time"],
+           "final": row["final label"] or row["label"]}
+    who = "added by you" if row["label"] == rv.NO_MODEL_LABEL else f"model says **{row['label']}**"
+    note = f"**{row['time']}** · {who}" + (f" · {row['review']}" if row["review"] else "")
     default = sel["final"] if sel["final"] in tr.CLASSES else None
     return sel, note, gr.update(value=default), sel["seconds"]
 
@@ -140,12 +141,17 @@ def select_event(evt: gr.SelectData):
 def _review(store, sel, scores, video, threshold, classes, status, new_label=None):
     if not sel:
         raise gr.Error("Click an event in the table first.")
+    if status == rv.CORRECTED and not new_label:
+        raise gr.Error("Pick a class under 'Relabel as' first.")
     if status == "undo":
         store = rv.clear(store, sel["label"], sel["seconds"])
+        done = "review cleared"
     else:
         store = rv.decide(store, sel["label"], sel["seconds"], status,
                           new_label if status == rv.CORRECTED else sel["final"])
-    return (store, *_views(scores, video, threshold, classes, store))
+        done = rv.MARK[status] + (f" → {new_label}" if status == rv.CORRECTED else "")
+    note = f"**{sel['time']}** · {done}. Click the next event."
+    return (store, *_views(scores, video, threshold, classes, store), note)
 
 
 def add_event(store, seconds, label, scores, video, threshold, classes):
@@ -154,7 +160,8 @@ def add_event(store, seconds, label, scores, video, threshold, classes):
     if seconds is None or label is None:
         raise gr.Error("Set a time and a class for the missed event.")
     store = rv.add(store, seconds, label)
-    return (store, *_views(scores, video, threshold, classes, store))
+    note = f"**{tr._fmt(seconds)}** · {rv.MARK[rv.ADDED]} {label}."
+    return (store, *_views(scores, video, threshold, classes, store), note)
 
 
 def export_review(scores, video, threshold, classes, store):
@@ -162,7 +169,7 @@ def export_review(scores, video, threshold, classes, store):
         raise gr.Error("Tag a match first.")
     table = _views(scores, video, threshold, classes, store)[0]
     csv_path, json_path = rv.export(table, video, REVIEW_DIR)
-    return str(csv_path), str(json_path)
+    return gr.update(value=[str(csv_path), str(json_path)], visible=True)
 
 
 def preview(video: str | None, evt: gr.SelectData):
@@ -220,36 +227,39 @@ def build() -> gr.Blocks:
                 table = gr.Dataframe(headers=TABLE_COLUMNS, interactive=False, max_height=520,
                                      label="Events (click a row to preview)", show_search="filter")
             with gr.Column(scale=2):
-                clip = gr.Video(label="Event preview", interactive=False, autoplay=True)
-                with gr.Row():
-                    json_file = gr.File(label="Events JSON", interactive=False)
-                    csv_file = gr.File(label="Events CSV", interactive=False)
-        with gr.Accordion("Review events (correct the model's tags)", open=True):
-            gr.Markdown("Click an event in the table, check the preview, then mark it. "
-                        "Missed something? Pause the full video at that moment and add it.")
-            selected_note = gr.Markdown("Click an event in the table.")
-            sel_seconds = gr.Number(visible=False)
-            with gr.Row():
-                confirm_btn = gr.Button("✓ Correct", size="sm")
-                fix_label = gr.Dropdown(tr.CLASSES, value=None, label="Correct class", scale=2)
-                relabel_btn = gr.Button("✎ Change to this class", size="sm")
-                reject_btn = gr.Button("✗ Not an event", size="sm")
-                undo_btn = gr.Button("Undo", size="sm")
-            with gr.Row():
-                add_time = gr.Number(label="Missed event at (seconds)", precision=2, scale=1)
-                now_btn = gr.Button("Use full-video time", size="sm")
-                add_label = gr.Dropdown(tr.CLASSES, value=None, label="Class", scale=2)
-                add_btn = gr.Button("+ Add missed event", size="sm")
-            with gr.Row():
-                export_btn = gr.Button("Export reviewed events", variant="secondary")
-                reviewed_csv = gr.File(label="Reviewed CSV", interactive=False)
-                reviewed_json = gr.File(label="Reviewed JSON", interactive=False)
+                clip = gr.Video(label="Event preview", interactive=False, autoplay=True, height=280)
+                selected_note = gr.Markdown("Click an event in the table to preview and review it.")
+                sel_seconds = gr.Number(visible=False)
+                with gr.Group():
+                    with gr.Row(equal_height=True):
+                        confirm_btn = gr.Button("✓ Correct", size="sm", min_width=0)
+                        reject_btn = gr.Button("✗ Not an event", size="sm", min_width=0)
+                        undo_btn = gr.Button("↺ Undo", size="sm", min_width=0)
+                    with gr.Row(equal_height=True):
+                        fix_label = gr.Dropdown(tr.CLASSES, value=None, label="Relabel as", scale=3, min_width=0)
+                        relabel_btn = gr.Button("✎ Relabel", size="sm", scale=1, min_width=0)
+                gr.Markdown("**Missed an event?** Pause the full video at that moment, then add it:")
+                with gr.Group():
+                    with gr.Row(equal_height=True):
+                        add_time = gr.Number(label="Time (s)", precision=2, scale=3, min_width=0)
+                        now_btn = gr.Button("⏱ Use video time", size="sm", scale=1, min_width=0)
+                    with gr.Row(equal_height=True):
+                        add_label = gr.Dropdown(tr.CLASSES, value=None, label="Class", scale=3, min_width=0)
+                        add_btn = gr.Button("+ Add", size="sm", scale=1, min_width=0)
+                export_btn = gr.Button("Export reviewed events")
+                reviewed_files = gr.File(label="Reviewed events", file_count="multiple",
+                                         interactive=False, visible=False)
 
         with gr.Accordion("Full video", open=False):
             gr.Markdown("Loads a 480p copy of the whole match (a few minutes for a full match, then cached). "
                         "Clicking an event jumps the player to 3 s before it.")
             full_btn = gr.Button("Load full video", size="sm")
-            full_video = gr.Video(label="Full match", interactive=False, elem_id="full-video")
+            full_video = gr.Video(label="Full match", interactive=False, elem_id="full-video", height=420)
+
+        with gr.Accordion("Model output files (JSON / CSV)", open=False):
+            with gr.Row():
+                json_file = gr.File(label="Events JSON", interactive=False)
+                csv_file = gr.File(label="Events CSV", interactive=False)
 
         with gr.Row():
             bar = gr.BarPlot(label="Events per class")
@@ -269,14 +279,14 @@ def build() -> gr.Blocks:
             None, [sel_seconds], None, js=JS_SEEK)
 
         review_inputs = [review_state, selected_state, *filters]
-        review_outputs = [review_state, *view_outputs]
+        review_outputs = [review_state, *view_outputs, selected_note]
         confirm_btn.click(lambda *a: _review(*a, rv.CONFIRMED), review_inputs, review_outputs)
         relabel_btn.click(lambda *a: _review(*a[:-1], rv.CORRECTED, a[-1]), [*review_inputs, fix_label], review_outputs)
         reject_btn.click(lambda *a: _review(*a, rv.REJECTED), review_inputs, review_outputs)
         undo_btn.click(lambda *a: _review(*a, "undo"), review_inputs, review_outputs)
         now_btn.click(None, [add_time], [add_time], js=JS_CURRENT_TIME)
         add_btn.click(add_event, [review_state, add_time, add_label, *filters], review_outputs)
-        export_btn.click(export_review, [*filters, review_state], [reviewed_csv, reviewed_json])
+        export_btn.click(export_review, [*filters, review_state], reviewed_files)
         full_btn.click(load_full_video, [video_state], full_video)
     return demo
 
