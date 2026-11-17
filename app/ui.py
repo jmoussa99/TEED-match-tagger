@@ -21,14 +21,13 @@ import tdeed_runner as tr  # noqa: E402
 PREVIEW_DIR = tr.CACHE_DIR / "previews"
 REVIEW_DIR = tr.REPO_ROOT / "outputs" / "events"
 SERIES_COLOR = "#2a78d6"  # single series; class identity is carried by the axis, not color
-PREVIEW_HALF_WINDOW = 4.0  # seconds before/after the event
 FULL_VIDEO_HEIGHT = 480   # the full-match player streams a light copy, not the original file
 
 TABLE_COLUMNS = ["time", "label", "confidence", "reliability", "review", "final label", "seconds"]
 
 # Browser-side helpers for the full-match player (elem_id="full-video").
 JS_SEEK = """(t) => { const v = document.querySelector('#full-video video');
-  if (v && t !== null && t !== undefined) { v.currentTime = Math.max(Number(t) - 3, 0); } }"""
+  if (v && t !== null && t !== undefined) { v.currentTime = Math.max(Number(t) - 2, 0); } }"""
 JS_CURRENT_TIME = """(t) => { const v = document.querySelector('#full-video video');
   return v ? Math.round(v.currentTime * 100) / 100 : t; }"""
 
@@ -172,21 +171,71 @@ def export_review(scores, video, threshold, classes, store):
     return gr.update(value=[str(csv_path), str(json_path)], visible=True)
 
 
-def preview(video: str | None, evt: gr.SelectData):
+FONT_CANDIDATES = [
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",       # Linux / Colab
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",          # macOS
+    "/System/Library/Fonts/Helvetica.ttc",
+    "/Library/Fonts/Arial.ttf",
+]
+EVENT_FLASH = 0.3  # seconds before/after the event that the red frame is shown
+
+
+def _font() -> str:
+    for f in FONT_CANDIDATES:
+        if Path(f).is_file():
+            return f":fontfile='{f}'"
+    return ""  # let ffmpeg/fontconfig pick a default
+
+
+def _esc(text: str) -> str:
+    """Escape text for ffmpeg drawtext."""
+    return text.replace("\\", "\\\\").replace("'", "’").replace(":", "\\:").replace("%", "\\%")
+
+
+def preview(video: str | None, length: float, slow: bool, evt: gr.SelectData):
     if not video or evt.row_value is None:
         return None
-    seconds = float(evt.row_value[TABLE_COLUMNS.index("seconds")])
-    start = max(seconds - PREVIEW_HALF_WINDOW, 0.0)
+    row = dict(zip(TABLE_COLUMNS, evt.row_value))
+    return _make_preview(video, float(row["seconds"]), row["time"], row["final label"] or row["label"], length, slow)
+
+
+def repreview(video: str | None, length: float, slow: bool, sel: dict | None):
+    """Re-cut the selected event's clip when the preview length or slow motion changes."""
+    if not video or not sel:
+        return gr.update()
+    return _make_preview(video, sel["seconds"], sel["time"], sel["final"], length, slow)
+
+
+def _make_preview(video: str, seconds: float, time_text: str, label: str, length: float, slow: bool) -> str:
+    """Cut a short clip around an event and mark the event moment: the label and time stay in the
+    corner, and a red frame + 'EVENT' flash for 0.6 s at the tagged time."""
+    length = float(length)
+    half = length / 2
+    start = max(seconds - half, 0.0)
+    at = seconds - start                          # event time inside the clip
     PREVIEW_DIR.mkdir(parents=True, exist_ok=True)
-    out = PREVIEW_DIR / f"{Path(video).stem}_{int(seconds * 1000)}.mp4"
-    if not out.is_file():
-        subprocess.run(
-            ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.2f}", "-i", video,
-             "-t", f"{2 * PREVIEW_HALF_WINDOW:.2f}", "-vf", "scale=-2:480",
-             "-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p",
-             "-c:a", "aac", "-movflags", "+faststart", str(out)],
-            check=True,
-        )
+    tag = "".join(ch for ch in label if ch.isalnum())[:12]
+    out = PREVIEW_DIR / f"{Path(video).stem}_{int(seconds * 1000)}_{int(length)}s{'_slow' if slow else ''}_{tag}.mp4"
+    if out.is_file():
+        return str(out)
+    on = f"enable='between(t,{max(at - EVENT_FLASH, 0):.2f},{at + EVENT_FLASH:.2f})'"
+    font = _font()
+    marks = [
+        f"drawbox=x=0:y=0:w=iw:h=ih:color=red@0.9:t=10:{on}",
+        f"drawtext=text='EVENT':x=(w-text_w)/2:y=24:fontsize=40:fontcolor=white:box=1:boxcolor=red@0.85:boxborderw=10{font}:{on}",
+        f"drawtext=text='{_esc(label)} @ {_esc(time_text)}':x=16:y=h-text_h-16:fontsize=24:fontcolor=white"
+        f":box=1:boxcolor=black@0.6:boxborderw=8{font}",
+    ]
+    base = ["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.2f}", "-t", f"{length:.2f}", "-i", video]  # -t on the input, so slow motion is not cut short
+    enc = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+    speed = ",setpts=2.0*PTS" if slow else ""
+    audio = ["-an"] if slow else ["-c:a", "aac"]
+    try:
+        subprocess.run(base + ["-vf", "scale=-2:480," + ",".join(marks) + speed] + enc + audio + [str(out)],
+                       check=True, capture_output=True)
+    except subprocess.CalledProcessError:
+        # ffmpeg without drawtext/freetype: keep the red frame, drop the text
+        subprocess.run(base + ["-vf", "scale=-2:480," + marks[0] + speed] + enc + audio + [str(out)], check=True)
     return str(out)
 
 
@@ -227,7 +276,11 @@ def build() -> gr.Blocks:
                 table = gr.Dataframe(headers=TABLE_COLUMNS, interactive=False, max_height=520,
                                      label="Events (click a row to preview)", show_search="filter")
             with gr.Column(scale=2):
-                clip = gr.Video(label="Event preview", interactive=False, autoplay=True, height=280)
+                clip = gr.Video(label="Event preview (red frame = the tagged moment)",
+                                interactive=False, autoplay=True, height=280)
+                with gr.Row(equal_height=True):
+                    preview_len = gr.Radio([4, 6, 8], value=4, label="Preview length (s)", scale=3, min_width=0)
+                    preview_slow = gr.Checkbox(value=False, label="Slow motion (½×)", scale=2, min_width=0)
                 selected_note = gr.Markdown("Click an event in the table to preview and review it.")
                 sel_seconds = gr.Number(visible=False)
                 with gr.Group():
@@ -252,7 +305,7 @@ def build() -> gr.Blocks:
 
         with gr.Accordion("Full video", open=False):
             gr.Markdown("Loads a 480p copy of the whole match (a few minutes for a full match, then cached). "
-                        "Clicking an event jumps the player to 3 s before it.")
+                        "Clicking an event jumps the player to 2 s before it.")
             full_btn = gr.Button("Load full video", size="sm")
             full_video = gr.Video(label="Full match", interactive=False, elem_id="full-video", height=420)
 
@@ -274,7 +327,9 @@ def build() -> gr.Blocks:
         all_btn.click(lambda: tr.CLASSES, None, classes)
         gar_btn.click(lambda: tr.GAR_CLASSES, None, classes)
         reliable_btn.click(lambda: rel.classes_at_least(tr.CLASSES, rel.MEDIUM), None, classes)
-        table.select(preview, [video_state], clip)
+        table.select(preview, [video_state, preview_len, preview_slow], clip)
+        for control in (preview_len, preview_slow):
+            control.change(repreview, [video_state, preview_len, preview_slow, selected_state], clip)
         table.select(select_event, None, [selected_state, selected_note, fix_label, sel_seconds]).then(
             None, [sel_seconds], None, js=JS_SEEK)
 

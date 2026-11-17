@@ -62,10 +62,10 @@ Paste a local path to the match file, or upload it. A path is faster for multi-G
 When tagging finishes, you can:
 
 - Filter events by confidence or class without re-running the model.
-- Click an event row to play an 8-second preview around it.
+- Click an event row to play a short preview around it (4, 6 or 8 s, optional ½× slow motion). The tagged moment flashes with a red frame and *EVENT*, and the label and time stay in the corner, so you can tell which action in a busy clip the model means.
 - Download the events as JSON or CSV.
 - **Review the tags** (*Review events*): click an event, then mark it **✓ Correct**, **✎ Change to this class**, or **✗ Not an event**. Add events the model missed with **+ Add missed event**, using the full video's current time. **Export reviewed events** writes `outputs/events/<video>_reviewed.{csv,json}` with each event's status and final class. Decisions survive threshold and class changes.
-- **Watch the whole match** (*Full video*): **Load full video** makes a 480p copy (a few minutes for a full match, then cached). Clicking an event jumps the player to 3 s before it.
+- **Watch the whole match** (*Full video*): **Load full video** makes a 480p copy (a few minutes for a full match, then cached). Clicking an event jumps the player to 2 s before it.
 
 ### Command line
 
