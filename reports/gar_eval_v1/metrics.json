@@ -1,0 +1,11 @@
+{
+  "split": "valid",
+  "n_clips": 436,
+  "classes_present": 10,
+  "prediction_classes": "GAR 10",
+  "window_seconds": 1.0,
+  "action_time_seconds": 2.43,
+  "balanced_accuracy": 37.6,
+  "accuracy": 43.11926605504588,
+  "seconds_per_clip": 2.61
+}
