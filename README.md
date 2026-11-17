@@ -64,6 +64,8 @@ When tagging finishes, you can:
 - Filter events by confidence or class without re-running the model.
 - Click an event row to play an 8-second preview around it.
 - Download the events as JSON or CSV.
+- **Review the tags** (*Review events*): click an event, then mark it **✓ Correct**, **✎ Change to this class**, or **✗ Not an event**. Add events the model missed with **+ Add missed event**, using the full video's current time. **Export reviewed events** writes `outputs/events/<video>_reviewed.{csv,json}` with each event's status and final class. Decisions survive threshold and class changes.
+- **Watch the whole match** (*Full video*): **Load full video** makes a 480p copy (a few minutes for a full match, then cached). Clicking an event jumps the player to 3 s before it.
 
 ### Command line
 
@@ -91,6 +93,7 @@ The windows, padding, displacement-head aggregation, and soft-NMS reproduce T-DE
 | [`app/tdeed_runner.py`](app/tdeed_runner.py) | Model loading, inference pipeline, and command-line interface |
 | [`app/patches/tdeed_mps.patch`](app/patches/tdeed_mps.patch) | Makes T-DEED device-agnostic (MPS or CPU) |
 | [`app/reliability.py`](app/reliability.py) | Per-class reliability shown in the UI |
+| [`app/review.py`](app/review.py) | Review decisions (confirm, relabel, reject, add) and export |
 | [`scripts/setup_tdeed.sh`](scripts/setup_tdeed.sh) | One-step setup |
 | [`scripts/launch_colab.py`](scripts/launch_colab.py), [`notebooks/tdeed_app_colab.ipynb`](notebooks/tdeed_app_colab.ipynb) | Run the UI on Google Colab with a public link |
 | [`scripts/evaluate_gar.py`](scripts/evaluate_gar.py), [`scripts/evaluate_gar_context.py`](scripts/evaluate_gar_context.py), [`scripts/dump_gar_scores.py`](scripts/dump_gar_scores.py), `notebooks/tdeed_gar_*.ipynb` | Evaluation on labeled SoccerNet-GAR clips (Colab) |
