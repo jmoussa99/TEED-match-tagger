@@ -4,6 +4,7 @@ The app is written for macOS: it decodes video with VideoToolbox and picks MPS o
 This launcher adapts both at runtime without editing the app:
   - ffmpeg's "-hwaccel videotoolbox" is dropped on Linux (via scripts/evaluate_gar.py's patch)
   - "auto" device selection prefers CUDA when available
+  - scoring uses one 8 s window per batch, so long matches fit in a T4's memory
 then starts the same Gradio UI with share=True, which prints a https://xxxx.gradio.live link.
 
 Usage (from the repo root on Colab):  python scripts/launch_colab.py [--extra-path /content/drive]
@@ -28,6 +29,18 @@ def _pick_device(name: str = "auto"):
 
 
 tr.pick_device = _pick_device
+
+# The app scores two 8 s windows per batch, which runs a 15 GB T4 out of memory on long
+# videos (seen in the padding vs context experiment). Score one window at a time instead.
+_orig_compute_scores = tr.compute_scores
+
+
+def _compute_scores(*args, **kwargs):
+    kwargs.setdefault("batch_size", 1)
+    return _orig_compute_scores(*args, **kwargs)
+
+
+tr.compute_scores = _compute_scores
 
 import ui  # noqa: E402  (app/ui.py, already on sys.path via evaluate_gar)
 
