@@ -143,12 +143,12 @@ def main() -> None:
     classes = tr.GAR_CLASSES
     rows, t0 = [], time.perf_counter()
     for k, (seg, video, first, n) in enumerate(seg_info, 1):
-        seg_scores = tr.compute_scores(video, model=model)
+        seg_scores = tr.compute_scores(video, model=model, batch_size=1)  # one 8 s window at a time: long segments OOM a T4 with 2
         seg_len_s = n / SOURCE_FPS
         for r in seg.itertuples():
             event_s = (r.start_frame - first) / SOURCE_FPS + r.action_offset_s
             ctx_pred, ctx_conf = predict_at(seg_scores, event_s, classes)
-            pad_pred, pad_conf = predict_at(tr.compute_scores(Path(r.path), model=model), r.action_offset_s, classes)
+            pad_pred, pad_conf = predict_at(tr.compute_scores(Path(r.path), model=model, batch_size=1), r.action_offset_s, classes)
             rows.append({"id": r.id, "label": r.label, "segment": video.name,
                          "context_before_s": round(event_s, 2), "context_after_s": round(seg_len_s - event_s, 2),
                          "pred_padded": pad_pred, "conf_padded": round(pad_conf, 4),
