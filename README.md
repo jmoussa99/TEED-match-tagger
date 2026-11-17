@@ -4,6 +4,27 @@ Tags ball actions across a full soccer match with [T-DEED](https://github.com/ar
 
 The model predicts 12 classes: `PASS`, `DRIVE`, `HEADER`, `HIGH PASS`, `OUT`, `CROSS`, `THROW IN`, `SHOT`, `BALL PLAYER BLOCK`, `PLAYER SUCCESSFUL TACKLE`, `FREE KICK`, `GOAL`. The UI's **GAR 10 classes** filter hides `DRIVE` and `BALL PLAYER BLOCK`. The remaining classes are the label set of the [SoccerNet 2027 Group Activity Recognition challenge](https://github.com/SoccerNet/sn-gar-2027), where this project started.
 
+## Run on Google Colab (no install, free GPU)
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/jmoussa99/TEED-match-tagger/blob/cs496-evaluation-and-reliability/notebooks/tdeed_app_colab.ipynb)
+
+Use this if your computer has no suitable GPU (on a MacBook Air, tagging can run out of memory and freeze the computer). You need only a Google account.
+
+1. Click the badge, then **Runtime → Change runtime type → T4 GPU**.
+2. **Runtime → Run all**. After 2–3 minutes the last cell prints `Running on public URL: https://xxxx.gradio.live`.
+3. Open that link in any browser, upload a match video, and click **Tag match**.
+
+The link works while the Colab tab stays open. To open large videos by path instead of uploading, tick `USE_GOOGLE_DRIVE` in the notebook's first cell. [`scripts/launch_colab.py`](scripts/launch_colab.py) adapts the app to Colab at runtime (CUDA instead of MPS, no VideoToolbox, one 8 s window per batch to fit a T4).
+
+## Per-class reliability
+
+T-DEED was trained on English-league broadcasts. On other footage some classes are much weaker, so the UI shows a **reliability** column (high / medium / low / untested), warns when results include low-reliability classes, offers a **Reliable classes only** filter, and lists each class's measured recall under **How reliable is each class?** The values come from [`reports/gar_eval_v1/per_class.csv`](reports/gar_eval_v1/per_class.csv) via [`app/reliability.py`](app/reliability.py).
+
+Measured on 436 labeled SoccerNet-GAR clips (World Cup 2022 broadcasts):
+
+- **Reliable:** PASS, OUT, SHOT (recall 0.74–0.86); THROW IN and HEADER are medium (0.50–0.60).
+- **Not reliable:** tackles are not detected at all. Goals are reported as SHOT and free kicks as PASS, because the two datasets label those moments differently ([error analysis](reports/gar_error_analysis/README.md)).
+
 ## Requirements
 
 - Python 3.12 and [uv](https://docs.astral.sh/uv/)
@@ -69,12 +90,16 @@ The windows, padding, displacement-head aggregation, and soft-NMS reproduce T-DE
 | [`app/ui.py`](app/ui.py) | Gradio UI |
 | [`app/tdeed_runner.py`](app/tdeed_runner.py) | Model loading, inference pipeline, and command-line interface |
 | [`app/patches/tdeed_mps.patch`](app/patches/tdeed_mps.patch) | Makes T-DEED device-agnostic (MPS or CPU) |
+| [`app/reliability.py`](app/reliability.py) | Per-class reliability shown in the UI |
 | [`scripts/setup_tdeed.sh`](scripts/setup_tdeed.sh) | One-step setup |
+| [`scripts/launch_colab.py`](scripts/launch_colab.py), [`notebooks/tdeed_app_colab.ipynb`](notebooks/tdeed_app_colab.ipynb) | Run the UI on Google Colab with a public link |
+| [`scripts/evaluate_gar.py`](scripts/evaluate_gar.py), [`scripts/evaluate_gar_context.py`](scripts/evaluate_gar_context.py), [`scripts/dump_gar_scores.py`](scripts/dump_gar_scores.py), `notebooks/tdeed_gar_*.ipynb` | Evaluation on labeled SoccerNet-GAR clips (Colab) |
+| [`reports/`](reports/) | Evaluation results and error analysis |
 | `private/`, `outputs/` | T-DEED clone and results (Git-ignored) |
 
 ## Notes
 
-- **Accuracy:** T-DEED was trained on SoccerNet broadcast footage (25 fps, 720p). Other camera styles or amateur footage may score lower.
+- **Accuracy:** T-DEED was trained on SoccerNet broadcast footage (25 fps, 720p). Other camera styles or amateur footage may score lower. See [Per-class reliability](#per-class-reliability) for measured numbers on World Cup footage.
 - **Timestamps:** Times run from the start of the file. If one file holds both halves, the second half's times include the half-time break.
 - **License:** T-DEED is GPL-3.0. It is kept as an external clone under `private/` and is not vendored into this repository.
 
